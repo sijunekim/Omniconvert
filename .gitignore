@@ -11,8 +11,11 @@ client/build
 server/uploads
 server/converted
 server/sessions
+
+# Secrets & Login Data (CRITICAL)
 server/tokens.json
+tokens.json
+server/.env    <-- THIS IS THE NEW LINE
 
 # System files
 .DS_Store
-.env

@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
@@ -59,9 +60,13 @@ function loadTokens() {
 ffmpeg.setFfmpegPath(ffmpegPath);
 const convertAsync = util.promisify(libre.convert);
 
-const GOOGLE_CLIENT_ID = '856374856193-3njg929585b8o2qje7ul8nbhs2c92eug.apps.googleusercontent.com';
-const GOOGLE_CLIENT_SECRET = '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';
-const oauth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const oauth2Client = new google.auth.OAuth2(
+  GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET
+);
+
 
 // Load tokens on startup
 loadTokens();
