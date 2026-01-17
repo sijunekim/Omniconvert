@@ -2,7 +2,6 @@
 > The Ultimate, Privacy-Focused File Conversion Utility for macOS.
 
 ![OmniConvert Banner](assets/omniconvert.png) 
-*(Note: Take a screenshot of your app with a file converting and replace the link above)*
 
 ## 📖 Overview
 OmniConvert is a native desktop application that replaces ad-riddled online converters. It processes files locally using powerful open-source engines, ensuring 100% privacy and zero file-size limits. It supports **100+ formats** across Audio, Video, Images, Documents, eBooks, and 3D Models.
@@ -23,7 +22,6 @@ OmniConvert is a native desktop application that replaces ad-riddled online conv
 *   **Engines:** FFmpeg, ImageMagick, LibreOffice (Headless), Pandoc, Calibre, Assimp, Unar.
 
 ## 💡 Technical Challenges & Solutions
-*(This is the most important section for your portfolio)*
 
 ### 1. The "Stale Session" Concurrency Bug
 **Problem:** Integrating Google OAuth in a desktop environment caused race conditions where the WebSocket connection would hold onto an old, unauthenticated session state after a login popup closed.
@@ -37,19 +35,46 @@ OmniConvert is a native desktop application that replaces ad-riddled online conv
 **Problem:** Different file types require different CLI tools, each with unique flags and quirks (e.g., LibreOffice failing on HTML, or FFmpeg failing on M4A containers).
 **Solution:** Built a **Smart Routing Engine** in Node.js. It analyzes file signatures and routes tasks to the specific engine (piping `dcraw` output to `ImageMagick` for RAW photos, or forcing `aac` codecs for audio) to ensure 100% reliability.
 
-### 🔑 Configuration (Important)
+## 🔑 Configuration (Important)
 To use the Google Drive features, you must configure the backend credentials:
 
-1.  Navigate to the `server` folder.
-2.  Duplicate `.env.example` and rename it to `.env`.
+1.  Locate the `.env.example` file in the **Root** folder.
+2.  Duplicate it and rename the copy to `.env`.
 3.  Open `.env` and paste your own **Google Client ID** and **Client Secret**.
     *(If you don't have these, the app will still run, but Cloud features will fail).*
 
 ## 🚀 How to Run Locally
-1.  **Prerequisites:** Install `ffmpeg`, `imagemagick`, `unar`, `calibre`, `assimp` via Homebrew.
-2.  **Clone:** `git clone https://github.com/yourusername/OmniConvert.git`
-3.  **Install:** `npm install` in root, client, and server folders.
-4.  **Run:** `npm start`
 
----
-*Built by [Sijune Kim - age 13]*
+### 1. Prerequisites
+Install the required system tools via Homebrew:
+brew install ffmpeg imagemagick unar calibre assimp
+
+### 2. Installation
+You must install dependencies for both the root application and the React client.
+code
+# 1. Clone the repo
+git clone https://github.com/sijunekim/Omniconvert.git
+cd Omniconvert
+
+# 2. Install Root/Electron dependencies
+npm install
+
+# 3. Install Client/React dependencies
+cd client
+npm install
+
+### 3. Running the app
+You need to run the React Frontend and the Electron app in two separate terminals.
+
+Terminal 1 (Start Frontend):
+cd client
+npm start
+
+Wait until you see "Compiled successfully" or "Local: http://localhost:3000".
+
+Terminal 2 (Start Electron):
+Leave Terminal 1 running. Open a new terminal in the root folder and run:
+npm start
+
+Built by [Sijune Kim - age 13]
+
