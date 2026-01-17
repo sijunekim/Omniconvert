@@ -64,12 +64,13 @@ You must install dependencies for both the root application and the React client
     # Install Root/Electron dependencies
     npm install
 
+    # Install Server dependencies
+    cd server
+    npm install
+
     # Install Client/React dependencies
     cd client
     npm install
-
-### 3. Running the App
-You need to run the React Frontend and the Electron app in two separate terminals.
 
 ### 3. Running the App
 You need to run the React Frontend and the Electron app in two separate terminals.
