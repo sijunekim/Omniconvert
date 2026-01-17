@@ -53,7 +53,8 @@ To use the Google Drive features, you must configure the backend credentials:
 Install the required system tools via Homebrew:
 
     brew install ffmpeg imagemagick unar calibre assimp
- ### 2. Installation
+
+### 2. Installation
 You must install dependencies for both the root application and the React client.
 
     # Clone the repo
@@ -67,7 +68,7 @@ You must install dependencies for both the root application and the React client
     cd client
     npm install
 
- ### 3. Running the App
+### 3. Running the App
 You need to run the React Frontend and the Electron app in two separate terminals.
 
 Terminal 1 (Start Frontend):
