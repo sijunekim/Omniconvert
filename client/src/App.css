@@ -1,0 +1,538 @@
+/* --- Base Styles --- */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background-color: #f4f7f9;
+    color: #333;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    margin: 0;
+    padding: 40px 15px;
+}
+
+.container {
+    width: 100%;
+    max-width: 600px;
+    background-color: #fff;
+    padding: 30px 40px;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+    text-align: center;
+}
+
+header h1 {
+    font-size: 2.5rem;
+    margin: 0 0 5px 0;
+}
+
+header p {
+    color: #6c757d;
+    margin: 0;
+}
+
+main {
+    margin-top: 30px;
+}
+
+/* --- Buttons --- */
+.primary-button, .secondary-button, button {
+    font-size: 1rem;
+    padding: 12px 20px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    font-weight: bold;
+    transition: background-color 0.2s, color 0.2s, box-shadow 0.2s, transform 0.1s;
+}
+
+/* Update this specific rule to ignore .logout-link */
+.primary-button, 
+button:not(.secondary-button):not(.reset-button):not(.source-button):not(.logout-link):not(.close-icon) {
+    background-color: #007bff;
+    color: white;
+}
+
+/* Also update the hover rule right below it */
+.primary-button:hover, 
+button:not(.secondary-button):not(.reset-button):not(.source-button):not(.logout-link):not(.close-icon):hover {
+    background-color: #0056b3;
+}
+.primary-button:disabled, button:disabled {
+    background-color: #adb5bd;
+    cursor: not-allowed;
+}
+
+.secondary-button, .reset-button {
+    background-color: #6c757d;
+    color: white;
+}
+.secondary-button:hover, .reset-button:hover {
+    background-color: #5a6268;
+}
+
+.button-group {
+    display: flex;
+    gap: 15px;
+    margin-top: 20px;
+}
+.button-group > button {
+    flex: 1;
+}
+
+/* --- Step 1: Source Selection --- */
+.source-options {
+    display: flex;
+    gap: 20px;
+    /* This ensures both sides stretch to the exact same height */
+    align-items: stretch; 
+    /* Optional: Set a fixed height if you want them to be taller */
+    min-height: 200px; 
+}
+
+/* 1. The Wrapper for the Computer Button */
+.upload-box-wrapper {
+    flex: 1; /* Take up 50% of the width */
+    display: flex; /* This allows the button inside to expand to fill the wrapper */
+    flex-direction: column;
+    position: relative;
+    border-radius: 8px;
+    transition: transform 0.1s, box-shadow 0.2s;
+}
+
+/* 2. The Inner Computer Button */
+.upload-box-wrapper .source-button {
+    width: 100%;
+    height: 100%;
+    margin: 0; /* Remove default margins */
+}
+
+/* 3. The Google Drive Button (Direct Child) */
+.source-options > .source-button {
+    flex: 1; /* Take up 50% of the width */
+    margin: 0;
+    height: auto; /* Allow it to stretch to match the wrapper */
+}
+
+/* Dragging visual effects */
+.upload-box-wrapper.dragging {
+    transform: scale(1.02);
+    box-shadow: 0 0 15px rgba(0, 123, 255, 0.4);
+    background-color: #e3f2fd;
+    border-color: #007bff;
+    z-index: 10;
+}
+
+/* Fix for drag events being stolen by children */
+.upload-box-wrapper * {
+    pointer-events: none;
+}
+.upload-box-wrapper button {
+    pointer-events: auto;
+}
+
+/* Shared Button Styles */
+.source-button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 30px 20px;
+    border: 2px dashed #dee2e6;
+    border-radius: 8px;
+    background-color: #fff;
+    color: #333;
+    text-align: center;
+    transition: border-color 0.2s, background-color 0.2s;
+    /* Ensure the button fills its container */
+    flex-grow: 1; 
+}
+
+.source-button:hover {
+    border-color: #007bff;
+    background-color: #f8f9fa;
+}
+
+.source-icon {
+    font-size: 2.5rem;
+    margin-bottom: 10px;
+}
+.source-title {
+    font-size: 1.1rem;
+    font-weight: bold;
+}
+.source-desc {
+    font-size: 0.9rem;
+    color: #6c757d;
+}
+
+.socket-status {
+    color: #6c757d;
+    font-size: 0.9rem;
+    margin-top: 20px;
+}
+
+/* --- Step 2: Configure --- */
+.configure-section {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.file-list {
+    text-align: left;
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 10px 20px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+.file-list h4 { margin: 5px 0 10px 0; }
+.file-list ul { list-style-type: none; padding: 0; margin: 0; }
+.file-list li { padding: 5px 0; border-bottom: 1px solid #e0e0e0; font-size: 0.9rem; }
+.file-list li:last-child { border-bottom: none; }
+
+.options-box {
+    text-align: left;
+}
+.options-box label {
+    font-weight: bold;
+    margin-right: 10px;
+}
+.options-box select {
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid #ced4da;
+    font-size: 1rem;
+}
+
+
+/* --- Step 3: Processing --- */
+.progress-section h3 { margin-bottom: 15px; }
+.progress-bar-container { width: 100%; background-color: #e9ecef; border-radius: 8px; overflow: hidden; }
+.progress-bar { width: 0%; height: 30px; background-color: #007bff; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; transition: width 0.3s ease-in-out; }
+
+/* --- Step 4: Complete/Error/Extracted --- */
+.download-box, .error-section, .extracted-files-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+}
+.download-button { display: inline-block; padding: 12px 24px; background-color: #28a745; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; }
+.error-message { color: #dc3545; font-weight: bold; background-color: #f8d7da; padding: 10px; border-radius: 8px; width: 100%; }
+
+.file-list.extracted li { display: flex; justify-content: space-between; align-items: center; width: 100%;}
+.file-list.extracted .file-name { flex-grow: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 15px; }
+.file-download-button.icon { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; background-color: #fff; color: #000; border: 1px solid #dee2e6; border-radius: 6px; text-decoration: none; flex-shrink: 0; transition: background-color 0.2s; }
+.file-download-button.icon:hover { background-color: #f8f9fa; }
+.file-download-button.icon svg { width: 18px; height: 18px; }
+
+/* --- Drive Picker Modal (for future use) --- */
+.drive-picker { text-align: left; }
+.drive-search { display: flex; gap: 10px; margin-bottom: 15px; }
+.drive-search input { flex-grow: 1; padding: 10px; border: 1px solid #ccc; border-radius: 6px; }
+.file-list.drive li { display: flex; justify-content: space-between; padding: 12px 10px; cursor: pointer; border-bottom: 1px solid #e9ecef; transition: background-color 0.2s; }
+.file-list.drive li:hover { background-color: #f8f9fa; }
+.file-list.drive .file-info { font-size: 0.8rem; color: #6c757d; }
+
+/* Add to the bottom of App.css */
+.upload-box.dragging {
+    background-color: #e3f2fd; /* Light blue background */
+    border-color: #007bff;     /* Solid blue border */
+    transform: scale(1.02);    /* Slight pop effect */
+}
+
+/* Ensure the button inside doesn't block the drag events */
+.upload-box button {
+    pointer-events: none; /* Let clicks pass through to parent, or handle click on parent */
+}
+/* Re-enable pointer events for the actual click action if needed, 
+   but since the parent handles the click in your code, this prevents flickering */
+.source-button {
+    pointer-events: auto; 
+}
+
+/* Add to App.css */
+.upload-box-wrapper {
+    border-radius: 8px;
+    transition: transform 0.1s;
+}
+
+.upload-box-wrapper.dragging {
+    transform: scale(1.05); /* Make it pop out slightly when dragging */
+    box-shadow: 0 0 10px rgba(0, 123, 255, 0.5); /* Blue glow */
+}
+
+/* Ensure the button inside changes color too */
+.upload-box-wrapper.dragging .source-button {
+    border-color: #007bff;
+    background-color: #e3f2fd;
+}
+
+/* --- Full Screen Drag & Drop Overlay --- */
+.drag-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(255, 255, 255, 0.9); /* Semi-transparent white */
+    z-index: 9999; /* Sit on top of everything */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border: 5px dashed #007bff;
+    box-sizing: border-box; /* Include border in size */
+    backdrop-filter: blur(5px); /* Nice blur effect */
+}
+
+.drag-overlay h2 {
+    font-size: 2.5rem;
+    color: #007bff;
+    margin-bottom: 10px;
+    pointer-events: none; /* Let clicks pass through if needed */
+}
+
+.drag-overlay p {
+    font-size: 1.2rem;
+    color: #555;
+    pointer-events: none;
+}
+
+/* Update the app wrapper to fill the screen */
+.app-wrapper {
+    min-height: 100vh;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+}
+
+/* --- Google Drive Picker Styles --- */
+.drive-picker {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 400px;
+}
+
+.drive-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.drive-header h3 {
+    margin: 0;
+    font-size: 1.5rem;
+    color: #333;
+}
+
+/* Update the header to hold multiple items aligned to the right */
+.drive-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+/* Style for the Sign Out button */
+.logout-link {
+    background-color: #f1f3f4;
+    border: none !important;    /* Force remove border */
+    color: #5f6368;
+    font-size: 0.85rem;
+    padding: 8px 16px;
+    border-radius: 18px;        /* Pill shape */
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    box-shadow: none;
+}
+
+.logout-link:hover {
+    background-color: #fee2e2;
+    color: #d93025;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+/* Ensure the Close 'X' looks good next to it */
+.close-icon {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background-color 0.2s;
+    color: #5f6368;
+}
+
+.close-icon:hover {
+    background-color: #f1f3f4;
+    color: #202124;
+}
+
+.drive-search {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.drive-search input {
+    flex-grow: 1;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 1rem;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05) inset;
+}
+
+.drive-search button {
+    background-color: #f1f3f4;
+    color: #5f6368;
+    border: 1px solid #ddd;
+    padding: 0 20px;
+}
+.drive-search button:hover { background-color: #e8eaed; }
+
+/* File List Area */
+.file-list.drive {
+    border: 1px solid #eee;
+    border-radius: 8px;
+    height: 300px; /* Fixed height for scrolling */
+    overflow-y: auto;
+    background-color: #fff;
+}
+
+.drive-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 15px;
+    border-bottom: 1px solid #f1f1f1;
+    cursor: pointer;
+    transition: background-color 0.1s;
+}
+
+.drive-item:hover {
+    background-color: #e8f0fe; /* Google-like hover blue */
+}
+
+.drive-item-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    overflow: hidden; /* Fix for long filenames */
+    flex: 1;
+}
+
+.drive-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+}
+
+.drive-name {
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #3c4043;
+}
+
+.drive-item-right {
+    display: flex;
+    gap: 15px;
+    font-size: 0.85rem;
+    color: #5f6368;
+    margin-left: 10px;
+    flex-shrink: 0;
+}
+
+.drive-loading, .drive-empty {
+    padding: 40px;
+    text-align: center;
+    color: #888;
+}
+
+/* Update the header to hold multiple items */
+.drive-actions {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+/* Style for the Sign Out button */
+.logout-link {
+    background: none;
+    border: 1px solid #dc3545;
+    color: #dc3545;
+    font-size: 0.85rem;
+    padding: 5px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: all 0.2s;
+}
+
+.logout-link:hover {
+    background-color: #dc3545;
+    color: white;
+}
+
+/* Update the header to hold multiple items aligned to the right */
+.drive-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+/* Style for the Sign Out button - Modern "Chip" Style */
+.logout-link {
+    background-color: #f1f3f4; /* Subtle gray background */
+    border: none;              /* Remove the harsh border */
+    color: #5f6368;            /* Soft dark gray text */
+    font-size: 0.85rem;
+    padding: 8px 16px;         /* Comfortable padding */
+    border-radius: 18px;       /* Fully rounded "pill" shape */
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+
+.logout-link:hover {
+    background-color: #fee2e2; /* Soft red background on hover */
+    color: #d93025;            /* Darker red text on hover */
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+/* Settings Box */
+.settings-box {
+    text-align: left;
+    margin-top: 15px;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+}
+
+.settings-box label {
+    font-weight: bold;
+    display: block;
+    margin-bottom: 8px;
+    font-size: 0.9rem;
+    color: #495057;
+}
+
+.settings-box select {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ced4da;
+    border-radius: 6px;
+    background-color: white;
+}

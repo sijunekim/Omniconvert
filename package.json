@@ -1,0 +1,66 @@
+{
+  "name": "omniconvert",
+  "version": "1.0.0",
+  "description": "The Ultimate File Conversion Utility",
+  "main": "main.js",
+  "author": "Your Name",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:all": "electron-builder -mwl",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "build": {
+    "appId": "com.omniconvert.app",
+    "productName": "OmniConvert",
+    "directories": {
+      "buildResources": "assets",
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": "dmg",
+      "icon": "assets/logo.icns"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/logo.ico"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "client/build/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "server/",
+        "to": "server/",
+        "filter": [
+          "**/*",
+          "!node_modules/electron/**/*"
+        ]
+      }
+    ]
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "electron": "^28.2.0",
+    "electron-builder": "^24.9.1",
+    "wait-on": "^9.0.3"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3"
+  },
+  "extraResources": [
+    ".env",
+    {
+      "from": "server/",
+      "to": "server/",
+      "filter": [
+        "**/*",
+        "!node_modules/electron/**/*"
+      ]
+    }
+  ]
+}
