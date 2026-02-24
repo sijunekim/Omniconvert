@@ -6,7 +6,12 @@
   "author": "Your Name",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder",
+    "react-start": "cd client && BROWSER=none npm start",
+    "electron:dev": "concurrently \"npm run react-start\" \"wait-on http://localhost:3000 && electron .\"",
+    "build-react": "cd client && npm run build",
+    "dist": "npm run build-react && electron-builder",
+    "dist:win": "npm run build-react && electron-builder --win",
+    "dist:all": "npm run build-react && electron-builder -mwl",
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
@@ -25,10 +30,20 @@
       "target": "nsis",
       "icon": "assets/logo.ico"
     },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "OmniConvert",
+      "runAfterFinish": true
+    },
     "files": [
       "main.js",
       "preload.js",
-      "client/build/**/*"
+      "client/build/**/*",
+      "server/**/*",
+      "src/**/*"
     ],
     "extraResources": [
       {
@@ -42,10 +57,27 @@
     ]
   },
   "devDependencies": {
-    "electron": "^28.2.0",
-    "electron-builder": "^24.9.1"
+    "concurrently": "^9.2.1",
+    "electron": "^40.0.0",
+    "electron-builder": "^23.0.6",
+    "wait-on": "^9.0.3"
   },
   "dependencies": {
-    "dotenv": "^17.2.3"
-  }
+    "@ffprobe-installer/ffprobe": "^2.1.2",
+    "dotenv": "^17.2.3",
+    "file-type": "^21.3.0",
+    "fs-extra": "^11.3.3",
+    "yauzl": "^3.2.0"
+  },
+  "extraResources": [
+    ".env",
+    {
+      "from": "server/",
+      "to": "server/",
+      "filter": [
+        "**/*",
+        "!node_modules/electron/**/*"
+      ]
+    }
+  ]
 }

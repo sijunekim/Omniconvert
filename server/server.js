@@ -1,4 +1,6 @@
-require('dotenv').config();
+console.log("🔥 I AM THE NEW CODE - VERSION 9001 🔥");
+const { scanArchive } = require('./services/archiveScanner');
+const { runSelfTest } = require('./services/selfTest');
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
@@ -16,9 +18,11 @@ const archiver = require('archiver');
 const PDFDocument = require('pdfkit');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+const ffprobePath = require('@ffprobe-installer/ffprobe').path;
 const sanitize = require('sanitize-filename');
-const { exec } = require('child_process');
-const execPromise = util.promisify(exec);
+const { runSafeJob } = require('./processRunner');
+const { pathToFileURL } = require('url'); // <--- ADD THIS
+
 
 // --- DIRECTORY SETUP ---
 const BASE_DIR = process.env.WRITABLE_PATH || __dirname;
@@ -33,9 +37,12 @@ const app = express();
 const server = http.createServer(app);
 const port = 5001;
 
+console.log("📍 SERVER IS WRITING FILES HERE:", BASE_DIR);
+
 // --- PERSISTENCE HELPERS ---
 function saveTokens(tokens) {
     try {
+        console.log("Saving tokens specifically to:", path.resolve(TOKENS_PATH));
         fs.writeFileSync(TOKENS_PATH, JSON.stringify(tokens));
         console.log('[AUTH] Tokens saved to disk.');
     } catch (e) {
@@ -44,21 +51,25 @@ function saveTokens(tokens) {
 }
 
 function loadTokens() {
+    console.log(`[AUTH] Looking for tokens at: ${TOKENS_PATH}`);
     if (fs.existsSync(TOKENS_PATH)) {
         try {
             const tokens = JSON.parse(fs.readFileSync(TOKENS_PATH));
             oauth2Client.setCredentials(tokens);
-            console.log('[AUTH] Tokens loaded from disk. User is logged in.');
+            console.log('[AUTH] Tokens loaded successfully. User is logged in.');
             return true;
         } catch (e) {
-            console.error('[AUTH] Failed to load tokens:', e.message);
+            console.error('[AUTH] Corrupted token file. Deleting it.', e.message);
+            fs.unlinkSync(TOKENS_PATH); // Delete bad file so user can re-login
         }
+    } else {
+        console.log('[AUTH] No tokens found. User must log in.');
     }
     return false;
 }
 
 ffmpeg.setFfmpegPath(ffmpegPath);
-const convertAsync = util.promisify(libre.convert);
+ffmpeg.setFfprobePath(ffprobePath);
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
@@ -75,6 +86,44 @@ app.use(cors({ origin: true, credentials: true, exposedHeaders: ['Content-Dispos
 
 const upload = multer({ dest: UPLOADS_DIR });
 const wss = new WebSocket.Server({ noServer: true });
+
+// --- LOGGING INTERCEPTOR ---
+const logBuffer = []; // Store history here (The new part)
+
+const broadcastLog = (level, args) => {
+    // Convert all arguments to a single string
+    const msg = args.map(arg => {
+        if (typeof arg === 'object') {
+            try { return JSON.stringify(arg); } catch(e) { return '[Object]'; }
+        }
+        return String(arg);
+    }).join(' ');
+
+    // Use 24-Hour Time format
+    const now = new Date();
+    const timeString = now.toISOString().split('T')[1].split('.')[0]; 
+    
+    const logObj = { level, message: msg, time: timeString };
+
+    // 1. Save to History (Limit to 100 lines)
+    logBuffer.push(logObj);
+    if (logBuffer.length > 100) logBuffer.shift();
+
+    // 2. Broadcast to active clients
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({ type: 'SERVER_LOG', payload: logObj }));
+        }
+    });
+};
+
+const originalLog = console.log;
+const originalError = console.error;
+
+console.log = (...args) => { originalLog(...args); broadcastLog('INFO', args); };
+console.error = (...args) => { originalError(...args); broadcastLog('ERROR', args); };
+
+
 const tokenStore = {}; // Temp store for handshake
 
 const CATEGORIES = {
@@ -83,11 +132,11 @@ const CATEGORIES = {
     // Professional/Raw Photos
     RAW_IMAGE: ['.cr2', '.nef', '.arw', '.orf', '.raf', '.dng', '.rw2', '.sr2', '.pef', '.crw', '.erf'],
     // Vector Graphics (New!)
-    VECTOR: ['.svg', '.eps', '.ai', '.pdf'],
+    VECTOR: ['.svg', '.eps', '.ai'],
     // Documents
     DOCUMENT: ['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx', '.odt', '.ods', '.odp', '.rtf', '.txt', '.html', '.xml', '.csv', '.pages', '.numbers', '.key'],
     // Video
-    VIDEO: ['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.3gp', '.3g2', '.ts', '.mts', '.m2ts', '.vob', '.ogv'],
+    VIDEO: ['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.3gp', '.3g2', '.ts', '.mts', '.m2ts', '.vob', '.ogv', '.m4a', '.m4r'],
     // Audio
     AUDIO: ['.mp3', '.wav', '.aac', '.m4a', '.flac', '.ogg', '.wma', '.aiff', '.alac', '.opus', '.amr', '.m4r'],
     // Archives
@@ -104,7 +153,7 @@ const SUPPORTED_OUTPUTS = {
     VECTOR: ['png', 'jpg', 'pdf', 'svg'],
     DOCUMENT: ['pdf', 'docx', 'txt', 'html', 'rtf', 'jpg', 'png'],
     VIDEO:  ['mp4', 'mkv', 'mov', 'avi', 'webm', 'wmv', 'gif', 'mp3', 'wav', 'flac'],
-    AUDIO:  ['mp3', 'wav', 'aac', 'm4a', 'flac', 'ogg', 'wma', 'aiff', 'm4r', 'opus'],
+    AUDIO:  ['mp3', 'wav', 'aac', 'm4a', 'flac', 'ogg', 'wma', 'aiff', 'm4r', 'opus', 'm4a', 'm4r'],
     ARCHIVE: ['extract', 'zip'],
     EBOOK:  ['pdf', 'epub', 'mobi', 'docx', 'txt', 'azw3'],
     MODEL_3D: ['obj', 'stl', 'ply', 'glb', 'gltf'],
@@ -115,19 +164,47 @@ app.get('/auth/google', (req, res) => {
     const uniqueId = crypto.randomBytes(16).toString('hex');
     oauth2Client.redirectUri = 'http://localhost:5001/auth/google/callback';
     const scopes = ['https://www.googleapis.com/auth/drive.readonly'];
-    const url = oauth2Client.generateAuthUrl({ access_type: 'offline', scope: scopes, state: uniqueId });
+    
+    // --- FIX: ADD prompt: 'consent' ---
+    const url = oauth2Client.generateAuthUrl({ 
+        access_type: 'offline', 
+        scope: scopes, 
+        state: uniqueId,
+        prompt: 'consent' // <--- THIS IS THE KEY TO STAYING LOGGED IN
+    });
+    
     res.redirect(url);
 });
 
 app.get('/auth/google/callback', async (req, res) => {
+    console.log("🔎 [AUTH] Google Callback Triggered!");
     const { code, state } = req.query;
+    
+    if (!code) {
+        console.error("❌ [AUTH] No code received from Google.");
+        return res.send('Error: No code received');
+    }
+
     try {
+        console.log("⏳ [AUTH] Exchanging code for tokens...");
         const { tokens } = await oauth2Client.getToken(code);
+        
+        console.log("✅ [AUTH] Tokens received from Google!");
+        console.log("🔑 [AUTH] Access Token present?", !!tokens.access_token);
+        console.log("🔄 [AUTH] Refresh Token present?", !!tokens.refresh_token);
+
         oauth2Client.setCredentials(tokens); // Set in memory
-        saveTokens(tokens); // Save to file
+        
+        // This calls the save function you added earlier
+        saveTokens(tokens); 
+        
         tokenStore[state] = tokens; // Store for frontend handshake
+        
+        console.log("🚀 [AUTH] Sending success message to popup...");
         res.send(`<script>window.opener.postMessage({ type: "google_auth_success", tokenId: "${state}" }, "*"); window.close();</script>`);
+    
     } catch (error) {
+        console.error("🔥 [AUTH] CRASH inside callback:", error.message);
         res.send('<script>window.opener.postMessage({ type: "google_auth_error" }, "*"); window.close();</script>');
     }
 });
@@ -163,7 +240,34 @@ server.on('upgrade', (request, socket, head) => {
     });
 });
 
-wss.on('connection', (ws, req) => {
+wss.on('connection', async (ws, req) => {
+    console.log('[WSS] Client connected');
+
+    // Send previous logs so the terminal isn't empty on reload
+    ws.send(JSON.stringify({ type: 'LOG_HISTORY', payload: logBuffer }));
+
+    // 1. Send System Health (Existing)
+    const healthReport = await runSelfTest();
+    ws.send(JSON.stringify({ 
+        type: 'SYSTEM_HEALTH', 
+        payload: healthReport 
+    }));
+
+    // 2. Send Auth Status IMMEDIATELY (New Fix)
+    // Check if we have valid credentials loaded in memory
+    const creds = oauth2Client.credentials;
+    const hasCreds = creds && Object.keys(creds).length > 0;
+    
+    // Validate them (Optional: simple check for now to make UI snappy)
+    const isLoggedIn = hasCreds; // You can add a deeper check if needed later
+    
+    console.log(`[WSS] Auto-sending Auth Status: ${isLoggedIn ? 'LOGGED IN' : 'LOGGED OUT'}`);
+    
+    ws.send(JSON.stringify({ 
+        type: 'GOOGLE_AUTH_STATUS', 
+        payload: { isLoggedIn: isLoggedIn } 
+    }));
+
     ws.on('message', async (message) => {
         const data = JSON.parse(message);
         const { tokenId } = data;
@@ -174,12 +278,42 @@ wss.on('connection', (ws, req) => {
 
         try {
             if (data.type === 'CHECK_GOOGLE_AUTH') {
+                console.log("------------------------------------------------");
+                console.log("🕵️‍♂️ [AUTH CHECK] Frontend asked: Am I logged in?");
+                
+                // 1. Check Memory
+                const creds = oauth2Client.credentials;
+                if (!creds || Object.keys(creds).length === 0) {
+                    console.log("❌ [AUTH CHECK] No credentials in memory.");
+                    ws.send(JSON.stringify({ type: 'GOOGLE_AUTH_STATUS', payload: { isLoggedIn: false } }));
+                    return;
+                }
+
+                console.log("✅ [AUTH CHECK] Credentials found in memory.");
+
+                // 2. Validate Token with Google
                 try {
-                    await oauth2Client.getAccessToken(); // Check global client
-                    ws.send(JSON.stringify({ type: 'GOOGLE_AUTH_STATUS', payload: { isLoggedIn: true } }));
+                    console.log("⏳ [AUTH CHECK] Verifying validity with Google...");
+                    // This checks if the token is alive and refreshes it if needed
+                    const res = await oauth2Client.getAccessToken();
+                    
+                    if (res && res.token) {
+                        console.log("🚀 [AUTH CHECK] Token is VALID! Sending 'true' to client.");
+                        ws.send(JSON.stringify({ type: 'GOOGLE_AUTH_STATUS', payload: { isLoggedIn: true } }));
+                    } else {
+                        console.log("⚠️ [AUTH CHECK] Token refresh returned no token.");
+                        ws.send(JSON.stringify({ type: 'GOOGLE_AUTH_STATUS', payload: { isLoggedIn: false } }));
+                    }
                 } catch (e) {
+                    console.log("🔥 [AUTH CHECK] Token validation FAILED:", e.message);
+                    console.log("🗑️ [AUTH CHECK] Deleting bad token file to force re-login.");
+                    // Optional: Delete the bad file so we don't get stuck in a loop
+                    if (fs.existsSync(TOKENS_PATH)) fs.unlinkSync(TOKENS_PATH);
+                    oauth2Client.setCredentials({});
+                    
                     ws.send(JSON.stringify({ type: 'GOOGLE_AUTH_STATUS', payload: { isLoggedIn: false } }));
                 }
+                console.log("------------------------------------------------");
                 return;
             }
 
@@ -210,213 +344,584 @@ wss.on('connection', (ws, req) => {
             if (data.type === 'CONVERT_DRIVE_FILE') {
                 const drive = google.drive({ version: 'v3', auth: oauth2Client });
                 const { file, settings } = data.payload;
-                const tempFilePath = path.join(UPLOADS_DIR, sanitize(file.name));
+                
+                // Use UUID for storage to prevent filename issues
+                const safeExt = (file.mimeType && file.mimeType.startsWith('application/vnd')) ? '.pdf' : path.extname(file.name) || '';
+                const tempFileName = `cloud_${crypto.randomUUID()}${safeExt}`;
+                const tempFilePath = path.join(UPLOADS_DIR, tempFileName);
+                
                 const dest = fs.createWriteStream(tempFilePath);
                 
-                if (file.mimeType && file.mimeType.startsWith('application/vnd.google-apps')) {
-                    const res = await drive.files.export({ fileId: file.id, mimeType: 'application/pdf' }, { responseType: 'stream' });
-                    await new Promise((resolve, reject) => { res.data.on('end', resolve).on('error', reject).pipe(dest); });
+                // --- NEW: DOWNLOAD PROGRESS TIMER ---
+                // Simulates progress from 0% to 30% while downloading
+                let downloadPercent = 0;
+                const downloadTimer = setInterval(() => {
+                    if (downloadPercent < 30) {
+                        downloadPercent += 5;
+                        sendProgress(downloadPercent);
+                    }
+                }, 500);
+
+                try {
+                    let res;
+                    if (file.mimeType && file.mimeType.startsWith('application/vnd.google-apps')) {
+                        res = await drive.files.export({ fileId: file.id, mimeType: 'application/pdf' }, { responseType: 'stream' });
+                    } else {
+                        res = await drive.files.get({ fileId: file.id, alt: 'media' }, { responseType: 'stream' });
+                    }
+
+                    await new Promise((resolve, reject) => {
+                        const timeout = setTimeout(() => { 
+                            res.data.destroy(); 
+                            dest.destroy(); 
+                            reject(new Error("Download timeout")); 
+                        }, 120000);
+                        
+                        res.data
+                            .on('error', reject)
+                            .on('end', () => { 
+                                clearTimeout(timeout); 
+                                resolve(); 
+                            })
+                            .pipe(dest);
+                            
+                        dest.on('error', reject);
+                    });
+
+                    // Download complete! Stop timer and prep for conversion.
+                    clearInterval(downloadTimer);
+                    
+                    // --- FIX: Ensure extension exists for proper categorization ---
+                    // If file name is "Report" but mime is pdf, make it "Report.pdf"
+                    let finalName = file.name;
+                    if (file.mimeType.startsWith('application/vnd') && !finalName.toLowerCase().endsWith('.pdf')) {
+                        finalName += '.pdf';
+                    } else if (!path.extname(finalName)) {
+                        // Fallback for extensionless files
+                        finalName += safeExt; 
+                    }
+
                     data.type = 'CONVERT';
-                    data.payload.files = [{ path: tempFilePath, originalName: file.name + '.pdf' }]; 
-                } else {
-                    const res = await drive.files.get({ fileId: file.id, alt: 'media' }, { responseType: 'stream' });
-                    await new Promise((resolve, reject) => { res.data.on('end', resolve).on('error', reject).pipe(dest); });
-                    data.type = 'CONVERT';
-                    data.payload.files = [{ path: tempFilePath, originalName: file.name }];
+                    data.payload.files = [{ 
+                        path: tempFilePath, 
+                        originalName: finalName
+                    }];
+                    data.payload.settings = settings;
+
+                } catch(e) { 
+                    clearInterval(downloadTimer);
+                    return sendError('Download Failed: ' + e.message); 
                 }
-                data.payload.settings = settings;
             }
 
             if (data.type === 'CONVERT') {
                 const { files, outputFormat, settings } = data.payload;
+
                 const sessionId = `session_${Date.now()}`;
                 const tempOutputDir = path.join(UPLOADS_DIR, sessionId);
-                let isArchiveJob = getFileCategory(path.extname(files[0].originalName).toLowerCase()) === 'ARCHIVE';
+
+                console.log('[Debug] Server received files:', JSON.stringify(files, null, 2));
+
+                const sendProgress = (p) =>
+                    ws.send(JSON.stringify({ type: 'PROGRESS', payload: { progress: p } }));
 
                 try {
                     await fsp.mkdir(tempOutputDir, { recursive: true });
-                    const successfulProcessingPaths = [];
-                    const areAllFilesInBatchImages = files.every(file => getFileCategory(path.extname(file.originalName).toLowerCase()) === 'IMAGE');
-                    const isCreateArchiveJob = files.length > 1 && !isArchiveJob;
 
-                    if (isArchiveJob) {
-                        sendProgress(50);
-                        const command = `unar -o "${tempOutputDir}" "${files[0].path}"`;
-                        await execPromise(command);
-                        const readdirRecursive = async (dir) => {
-                            const entries = await fsp.readdir(dir, { withFileTypes: true });
-                            const filePaths = await Promise.all(entries.map((entry) => {
-                                const res = path.resolve(dir, entry.name);
-                                return entry.isDirectory() ? readdirRecursive(res) : res;
-                            }));
-                            return Array.prototype.concat(...filePaths);
-                        };
-                        const allFiles = await readdirRecursive(tempOutputDir);
-                        const fileList = allFiles.map(fullPath => path.relative(tempOutputDir, fullPath));
-                        sendProgress(100);
-                        ws.send(JSON.stringify({ type: 'EXTRACT_COMPLETE', payload: { fileList, sessionId: sessionId } }));
-                        setTimeout(() => { fsp.rm(tempOutputDir, { recursive: true, force: true }).catch(err => {}); }, 30 * 60 * 1000);
-                        return;
-                    }
+                    const results = [];
+                    const conversionErrors = [];
+                    let extractedCount = 0;
 
-                    if (areAllFilesInBatchImages && outputFormat === 'pdf') {
-                        const pdfName = `OmniConvert_${sessionId}.pdf`;
-                        const outputPath = path.join(tempOutputDir, pdfName);
-                        await new Promise(async (resolve, reject) => {
-                            const doc = new PDFDocument({ autoFirstPage: false });
-                            const stream = fs.createWriteStream(outputPath);
-                            doc.pipe(stream);
-                            for (const file of files) {
-                                const imageBuffer = await fsp.readFile(file.path);
-                                const metadata = await sharp(imageBuffer).metadata();
-                                doc.addPage({ size: [metadata.width, metadata.height] });
-                                doc.image(imageBuffer, { fit: [metadata.width, metadata.height] });
-                            }
-                            doc.end();
-                            stream.on('finish', resolve);
-                            stream.on('error', reject);
-                        });
-                        successfulProcessingPaths.push(outputPath);
-                    } else if (isCreateArchiveJob) {
-                        for (const file of files) {
-                            const newPath = path.join(tempOutputDir, file.originalName);
-                            await fsp.rename(file.path, newPath);
-                            successfulProcessingPaths.push(newPath);
+                    for (let i = 0; i < files.length; i++) {
+                        const file = files[i];
+
+                        const originalName = file.name || file.originalName || file.originalname || 'unknown_file';
+                        
+                        if (!file.path) throw new Error(`File path missing for ${originalName}`);
+
+                        const ext = path.extname(originalName).toLowerCase(); 
+                        const category = getFileCategory(ext);
+
+                        // --- FIX: SAFE INTERMEDIATE NAMING ---
+                        // 1. Calculate the "Pretty" name we want at the end
+                        let prettyName = sanitize(path.parse(originalName).name);
+                        if (!prettyName || prettyName.replace(/\./g, '').trim().length === 0) {
+                            prettyName = `file_${Date.now()}_${i}`;
                         }
-                    } else {
-                        for (let i = 0; i < files.length; i++) {
-                    const file = files[i];
-                    const safeName = sanitize(path.parse(file.originalName).name);
-                    const outputPath = path.join(tempOutputDir, `${safeName}.${outputFormat}`);
-                    const fileExt = path.extname(file.originalName).toLowerCase().replace('.', '');
-                    const fileCategory = getFileCategory(path.extname(file.originalName).toLowerCase());
+                        
+                        // 2. Define a "Safe" name for the tool to use (No brackets, no spaces, no unicode)
+                        // This prevents ImageMagick from getting confused by '[' or ']'
+                        const tempSafeName = `process_temp_${Date.now()}_${i}.${outputFormat}`;
+                        const tempOutputPath = path.join(tempOutputDir, tempSafeName);
+                        
+                        // 3. Define the Final path (where we rename it to later)
+                        const finalOutputPath = path.join(tempOutputDir, `${prettyName}.${outputFormat}`);
+                        // -------------------------------------
 
-                    try {
-                        // 1. STANDARD IMAGES (Smart Router: Sharp vs Magick)
-                        if (fileCategory === 'IMAGE' || fileCategory === 'VECTOR') {
-                            // Sharp handles web formats fast. Magick handles everything else (BMP, ICO, TIFF, PDF).
-                            const useMagick = fileCategory === 'VECTOR' || ['bmp', 'ico', 'tiff', 'tga', 'pdf'].includes(outputFormat);
+                        console.log(`[Processing] ${originalName} -> ${tempSafeName}`);
 
-                            if (useMagick) {
-                                let command = `magick "${file.path}" "${outputPath}"`;
+                        try {
+                            console.log('[DEBUG]', originalName, 'Category:', category, 'Ext:', ext, 'Output:', outputFormat);
+                            
+
+                            /* ================= IMAGE ================= */
+                            if (category === 'IMAGE') {
+                                // 1. Determine if we must use ImageMagick
+                                // We use Magick for:
+                                // - HEIC (Complex format, Magick handles it better than Sharp)
+                                // - PDF/ICO/TIFF (Formats Sharp handles poorly or not at all)
+                                const isHeic = ext === '.heic' || ext === '.heif';
+                                const complexFormats = ['bmp', 'ico', 'tiff', 'tga', 'pdf'];
                                 
-                                // Special fix for ICO sizing
-                                if (outputFormat === 'ico') {
-                                    command = `magick "${file.path}" -resize "256x256>" "${outputPath}"`;
+                                const useMagick = isHeic || complexFormats.includes(outputFormat);
+
+                                if (ext === '.pdf' && outputFormat === 'html') {
+                                    throw new Error('PDF to HTML must be handled in DOCUMENT pipeline only.');
                                 }
+
+
+                                if (useMagick) {
+                                    const args = [file.path];
+
+                                    if (outputFormat === 'ico') {
+                                        args.push('-resize', '256x256>');
+                                    }
+
+                                    args.push(tempOutputPath);
+                                    
+                                    // HEIC conversion can be slow, give it 60 seconds
+                                    await runSafeJob('magick', args, { timeoutMs: 60000 });
+                                } else {
+                                    // Use Sharp for standard, fast conversions (JPG, PNG, WebP)
+                                    await sharp(file.path)
+                                        .toFormat(outputFormat)
+                                        .toFile(tempOutputPath); // Was outputPath
+                                }
+                            }
+
+                            /* ================= VECTOR ================= */
+                            else if (category === 'VECTOR') {
+                                // Was: outputPath
+                                await runSafeJob('magick', [file.path, tempOutputPath]);
+                            }
+
+                            /* ================= RAW IMAGE ================= */
+                            else if (category === 'RAW_IMAGE') {
+                                const { spawn } = require('child_process');
+
+                                await new Promise((resolve, reject) => {
+                                    const dcraw = spawn(
+                                        'dcraw',
+                                        ['-c', '-w', '-T', file.path],
+                                        { stdio: ['ignore', 'pipe', 'pipe'] }
+                                    );
+
+                                    // Was: outputPath
+                                    const magick = spawn(
+                                        'magick',
+                                        ['-', tempOutputPath], 
+                                        { stdio: ['pipe', 'ignore', 'pipe'] }
+                                    );
+
+                                    dcraw.stdout.pipe(magick.stdin);
+                                    dcraw.on('error', reject);
+                                    magick.on('error', reject);
+                                    magick.on('close', (code) =>
+                                        code === 0 ? resolve() : reject(new Error(`RAW conversion failed (${code})`))
+                                    );
+                                });
+                            }
+
+                            /* ================= DOCUMENT (Final Fixed Version) ================= */
+                            else if (category === 'DOCUMENT') {
+                                const isTextSource = ['.txt', '.md', '.html', '.htm', '.rtf'].includes(ext);
+                                const isImageOutput = ['jpg', 'png', 'bmp', 'tiff'].includes(outputFormat);
+                                const isPdfSource = ext === '.pdf';
+
+                                // --- UNIVERSAL PROGRESS TIMER ---
+                                let currentFakeProgress = 0;
+                                sendProgress(Math.round(((i * 100) + 1) / files.length)); 
+
+                                const progressTimer = setInterval(() => {
+                                    if (currentFakeProgress < 95) {
+                                        currentFakeProgress += 2;
+                                        const total = ((i * 100) + currentFakeProgress) / files.length;
+                                        sendProgress(Math.round(total));
+                                    }
+                                }, 250);
+
+                                // 1. PREPARE CLEAN ROOM
+                                const jobDir = path.join(tempOutputDir, `job_${i}_${Date.now()}`);
+                                await fsp.mkdir(jobDir);
                                 
-                                await execPromise(command);
+                                const safeInputName = `source${ext}`;
+                                const safeInputPath = path.join(jobDir, safeInputName);
+                                const expectedOutputName = `output.${outputFormat}`;
+                                const expectedOutputPath = path.join(jobDir, expectedOutputName);
+
+                                try {
+                                    await fsp.copyFile(file.path, safeInputPath);
+
+                                    // --- CASE 0: SAME FORMAT (Passthrough) ---
+                                    // If input is PDF and output is PDF (common for Google Sheets), just copy it.
+                                    if (ext === `.${outputFormat}` || (isPdfSource && outputFormat === 'pdf')) {
+                                        console.log(`[Passthrough] Input is already ${outputFormat}, skipping conversion tool.`);
+                                        await fsp.copyFile(safeInputPath, expectedOutputPath);
+                                    }
+
+                                    // --- CASE 1: PDF -> IMAGE ---
+                                    if (isPdfSource && isImageOutput) {
+                                        await runSafeJob('magick', [
+                                            '-density', '150',          
+                                            'source.pdf[0]',            
+                                            '-background', 'white',     
+                                            '-alpha', 'remove', '-alpha', 'off',
+                                            '-quality', '100',          
+                                            expectedOutputName 
+                                        ], { cwd: jobDir });
+                                    }
+
+                                    // --- CASE 2: TEXT/HTML -> IMAGE ---
+                                    else if (isTextSource && isImageOutput) {
+                                        const sofficePath = '/Applications/LibreOffice.app/Contents/MacOS/soffice';
+                                        const profileDir = path.join(jobDir, 'user_profile');
+                                        const profileUri = require('url').pathToFileURL(profileDir).href;
+
+                                        await runSafeJob(sofficePath, [
+                                            `-env:UserInstallation=${profileUri}`,
+                                            '--headless', '--norestore',
+                                            '--convert-to', 'pdf', 
+                                            '--outdir', '.', 
+                                            safeInputName
+                                        ], { timeoutMs: 180000, cwd: jobDir });
+
+                                        const files = await fsp.readdir(jobDir);
+                                        const pdf = files.find(f => f.endsWith('.pdf') && f !== safeInputName) || safeInputName;
+                                        
+                                        await runSafeJob('magick', [
+                                            '-density', '150', 
+                                            `${pdf}[0]`, 
+                                            '-background', 'white', '-alpha', 'remove', '-alpha', 'off', 
+                                            '-quality', '100', 
+                                            expectedOutputName
+                                        ], { cwd: jobDir });
+                                    }
+
+                                    // --- CASE 3: TEXT -> TEXT (Skip if output is PDF) ---
+                                    else if (isTextSource && outputFormat !== 'pdf') {
+                                        await runSafeJob('pandoc', [safeInputName, '-o', expectedOutputName], { cwd: jobDir });
+                                    }
+
+                                    // --- CASE 4: PDF -> HTML (Specific Handler) ---
+                                    else if (isPdfSource && outputFormat === 'html') {
+                                        const sofficePath = '/Applications/LibreOffice.app/Contents/MacOS/soffice';
+                                        const profileDir = path.join(jobDir, 'user_profile');
+                                        const profileUri = require('url').pathToFileURL(profileDir).href;
+
+                                        await runSafeJob(sofficePath, [
+                                            `-env:UserInstallation=${profileUri}`,
+                                            '--headless', '--norestore',
+                                            '--infilter=writer_pdf_import',
+                                            '--convert-to', 'html:XHTML Writer File:UTF8',
+                                            '--outdir', '.',
+                                            safeInputName
+                                        ], { timeoutMs: 180000, cwd: jobDir });
+
+                                        // Try to find the HTML immediately
+                                        const allFiles = await fsp.readdir(jobDir);
+                                        const htmlFile = allFiles.find(f => f.toLowerCase().endsWith('.html'));
+                                        if (htmlFile) {
+                                            await fsp.rename(path.join(jobDir, htmlFile), tempOutputPath);
+                                        }
+                                    }
+
+                                    // --- CASE 5: OFFICE/GENERIC (LibreOffice) ---
+                                    else {
+                                        const sofficePath = '/Applications/LibreOffice.app/Contents/MacOS/soffice';
+                                        const profileDir = path.join(jobDir, 'user_profile');
+                                        const profileUri = require('url').pathToFileURL(profileDir).href;
+                                        
+                                        await runSafeJob(sofficePath, [
+                                            `-env:UserInstallation=${profileUri}`,
+                                            '--headless', '--norestore',
+                                            '--convert-to', outputFormat,
+                                            '--outdir', '.', 
+                                            safeInputName
+                                        ], { timeoutMs: 180000, cwd: jobDir });
+                                    }
+
+                                    // --- 3. FINAL GRABBER (The part that was failing) ---
+                                    // Only run if we haven't already moved the file (like in Case 4)
+                                    if (!fs.existsSync(tempOutputPath)) {
+                                        
+                                        // Strategy A: Check for exact expected name
+                                        if (fs.existsSync(expectedOutputPath)) {
+                                            await fsp.rename(expectedOutputPath, tempOutputPath);
+                                        } 
+                                        else {
+                                            // Strategy B: Scan folder for ANY result file
+                                            const allFiles = await fsp.readdir(jobDir);
+                                            
+                                            const resultFile = allFiles.find(f => 
+                                                f !== safeInputName &&             // Not the input
+                                                !f.startsWith('user_profile') &&   // Not the profile folder
+                                                // I REMOVED THE PDF FILTER HERE. IT WILL NOW FIND source.pdf
+                                                f.toLowerCase().endsWith(`.${outputFormat}`)
+                                            );
+
+                                            if (resultFile) {
+                                                await fsp.rename(path.join(jobDir, resultFile), tempOutputPath);
+                                            } else {
+                                                // Strategy C: Check for Magick suffix (output-0.jpg)
+                                                const fallback = allFiles.find(f => f.includes(`-0.${outputFormat}`));
+                                                if (fallback) {
+                                                    await fsp.rename(path.join(jobDir, fallback), tempOutputPath);
+                                                } else {
+                                                    console.log(`[Job Failed] Dir content: ${JSON.stringify(allFiles)}`);
+                                                    throw new Error(`Output missing in Clean Room.`);
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // --- BONUS CLEANUP ---
+                                    if (outputFormat === 'html') {
+                                        const allFiles = await fsp.readdir(jobDir);
+                                        for (const file of allFiles) {
+                                            if (file.endsWith('_files')) {
+                                                await fsp.rm(path.join(jobDir, file), { recursive: true, force: true }).catch(()=>{});
+                                            }
+                                        }
+                                    }
+
+                                } finally {
+                                    clearInterval(progressTimer);
+                                    await fsp.rm(jobDir, { recursive: true, force: true }).catch(()=>{});
+                                }
+                            }
+
+
+                            /* ================= VIDEO / AUDIO (Fixed) ================= */
+                            else if (category === 'VIDEO' || category === 'AUDIO') {
+                                // ---- Enforce output compatibility ----
+                                const allowedOutputs = SUPPORTED_OUTPUTS[category];
+                                if (!allowedOutputs || !allowedOutputs.includes(outputFormat)) {
+                                    // Soft fallback: if audio is requested from video, allow it
+                                    if (category === 'VIDEO' && SUPPORTED_OUTPUTS.AUDIO.includes(outputFormat)) {
+                                        // Allowed (Video -> Audio extraction)
+                                    } else {
+                                         throw new Error(`${outputFormat} is not supported for ${category}`);
+                                    }
+                                }
+
+                                await new Promise((resolve, reject) => {
+                                    let cmd = ffmpeg(file.path);
+
+                                    /* ---------- VIDEO → AUDIO ---------- */
+                                    const isAudioOutput = SUPPORTED_OUTPUTS.AUDIO.includes(outputFormat);
+                                    if (category === 'VIDEO' && isAudioOutput) {
+                                        cmd = cmd.noVideo();
+                                    }
+
+                                    /* ---------- VIDEO-ONLY CONTROLS ---------- */
+                                    if (category === 'VIDEO') {
+                                        if (settings?.resolution && settings.resolution !== 'original') {
+                                            cmd = cmd.size(settings.resolution);
+                                        }
+                                    }
+
+                                    /* ---------- AUDIO CONTROLS ---------- */
+                                    if (settings?.audioBitrate && settings.audioBitrate !== 'original') {
+                                        cmd = cmd.audioBitrate(settings.audioBitrate);
+                                    }
+
+                                    /* ---------- FIX: M4A / M4R MAPPING ---------- */
+                                    // This is the part that was missing in your paste!
+                                    if (outputFormat === 'm4a' || outputFormat === 'm4r') {
+                                        cmd.format('ipod'); 
+                                        cmd.audioCodec('aac');
+                                        if (outputFormat === 'm4r') cmd.audioBitrate('128k');
+                                    } else {
+                                        // For standard formats (mp4, mp3, avi), use the name directly
+                                        cmd.toFormat(outputFormat);
+                                    }
+
+                                    /* ---------- HARD TIMEOUT ---------- */
+                                    const timeout = setTimeout(() => {
+                                        cmd.kill('SIGKILL');
+                                        reject(new Error('FFmpeg timed out'));
+                                    }, 5 * 60 * 1000); // 5 minutes
+
+                                    /* ---------- EXECUTE ---------- */
+                                    cmd
+                                        .on('progress', (progress) => {
+                                            if (progress.percent) {
+                                                const currentFilePercent = progress.percent;
+                                                const totalProgress = ((i * 100) + currentFilePercent) / files.length;
+                                                sendProgress(Math.round(totalProgress));
+                                            }
+                                        })
+                                        .on('error', (err) => {
+                                            clearTimeout(timeout);
+                                            // Handle "output is empty" bug (common with some formats)
+                                            if (fs.existsSync(tempOutputPath) && fs.statSync(tempOutputPath).size > 0) {
+                                                resolve();
+                                            } else {
+                                                reject(err);
+                                            }
+                                        })
+                                        .on('end', () => {
+                                            clearTimeout(timeout);
+                                            resolve();
+                                        })
+                                        .save(tempOutputPath);
+                                });
+                            }
+                            /* ================= EBOOK ================= */
+                            else if (category === 'EBOOK') {
+                                const calibrePath = '/Applications/calibre.app/Contents/MacOS/ebook-convert';
+                                // Was: outputPath
+                                await runSafeJob(calibrePath, [file.path, tempOutputPath]);
+                            }
+
+                            /* ================= 3D MODEL ================= */
+                            else if (category === 'MODEL_3D') {
+                                // Was: outputPath
+                                await runSafeJob('assimp', ['export', file.path, tempOutputPath]);
+                            }
+
+                            /* ================= ARCHIVE (New Secure Block) ================= */
+                            else if (category === 'ARCHIVE') {
+                                if (outputFormat === 'extract') {
+                                    console.log(`[Security] Scanning archive: ${originalName}`);
+
+                                    // 1. SCAN FIRST (Anti-Zip Bomb)
+                                    // 'scanArchive' throws an error if the file is dangerous.
+                                    // Currently supports .zip. We skip scan for others (or add parsers later).
+                                    if (ext === '.zip') {
+                                        await scanArchive(file.path);
+                                    }
+
+                                    // 2. PREPARE EXTRACTION
+                                    // We create a specific folder for this extraction
+                                    const extractDir = path.join(tempOutputDir, 'extracted');
+                                    await fsp.mkdir(extractDir);
+
+                                    // 3. RUN UNAR (Sandboxed)
+                                    await runSafeJob('unar', [
+                                        '-o', extractDir, // Output directory
+                                        '-f',             // Force overwrite
+                                        '-no-directory',  // Don't create an extra folder inside
+                                        '-p', '',         // Try with empty password (avoids hanging on prompts)
+                                        file.path
+                                    ]);
+
+                                    // 4. HANDLING RESULTS
+                                    // Extraction is special. The frontend expects a list of files to browse,
+                                    // not a single download link.
+                                    const extractedFiles = await fsp.readdir(extractDir);
+                                    
+                                    // Send the special "EXTRACT_COMPLETE" message to React
+                                    ws.send(JSON.stringify({
+                                        type: 'EXTRACT_COMPLETE',
+                                        payload: { 
+                                            fileList: extractedFiles,
+                                            sessionId: sessionId 
+                                        }
+                                    }));
+
+                                    // We use 'continue' here because we successfully handled this file
+                                    // and we don't want the standard "Zip the results" logic at the bottom to run.
+                                    extractedCount++;
+                                    continue;
+                                }
+                            }
+
+                            else {
+                                throw new Error(`Unsupported category: ${category} (ext: ${ext})`);
+                            }
+
+                            // --- FIX: RENAME TO PRETTY NAME ---
+                            if (fs.existsSync(tempOutputPath)) {
+                                // Rename "temp_123.jpg" -> "My Cool File [Final].jpg"
+                                await fsp.rename(tempOutputPath, finalOutputPath);
+                                results.push(finalOutputPath);
                             } else {
-                                // Use Sharp for speed on JPG, PNG, WEBP, GIF
-                                await sharp(file.path).toFormat(outputFormat).toFile(outputPath);
+                                throw new Error(`Tool finished but output missing: ${tempOutputPath}`);
                             }
-                        }
-                        // 2. VECTORS (Magick)
-                        else if (fileCategory === 'VECTOR') {
-                            const command = `magick "${file.path}" "${outputPath}"`;
-                            await execPromise(command);
-                        }
-                        // 3. RAW PHOTOS (DCRAW -> MAGICK)
-                        else if (fileCategory === 'RAW_IMAGE') {
-                            const command = `dcraw -c -w -T "${file.path}" | magick - "${outputPath}"`;
-                            await execPromise(command);
-                        }
-                        // 4. DOCUMENTS (Pandoc for Text/HTML, LibreOffice for Office)
-                        else if (fileCategory === 'DOCUMENT') {
-                            const ext = path.extname(file.originalName).toLowerCase();
-                            // Use Pandoc for web/text formats (Fixes HTML conversion)
-                            if (['.html', '.htm', '.txt', '.md', '.rtf'].includes(ext)) {
-                                const command = `pandoc "${file.path}" -o "${outputPath}"`;
-                                await execPromise(command);
-                            } else {
-                                // Use LibreOffice CLI for Word/Excel/PPT
-                                const sofficePath = '/Applications/LibreOffice.app/Contents/MacOS/soffice';
-                                const tempProfileDir = path.join(tempOutputDir, `LO_Profile_${i}`);
-                                const profileUri = `file://${tempProfileDir.startsWith('/') ? '' : '/'}${tempProfileDir}`;
-                                const command = `"${sofficePath}" "-env:UserInstallation=${profileUri}" --headless --convert-to "${outputFormat}" --outdir "${tempOutputDir}" "${file.path}"`;
-                                
-                                try { await execPromise(command); } catch (e) {}
 
-                                // Retry loop to wait for LibreOffice to finish writing
-                                const loOutput = path.join(tempOutputDir, `${path.parse(file.path).name}.${outputFormat}`);
-                                for (let k=0; k<30; k++) {
-                                    if (fs.existsSync(loOutput)) { await fsp.rename(loOutput, outputPath); break; }
-                                    await new Promise(r => setTimeout(r, 100));
-                                }
+                        } catch (err) {
+                            console.error(`[CONVERT FAILED] ${originalName}:`, err.message);
+                            
+                            // --- NEW: Log the Tool's StdErr (The real error) ---
+                            if (err.stderr) {
+                                console.error(`[TOOL OUTPUT]`, err.stderr);
+                                console.error('[STDERR]', err.stderr);
+
                             }
-                        }
-                        // 5. VIDEO & AUDIO (FFmpeg)
-                        else if (fileCategory === 'VIDEO' || fileCategory === 'AUDIO') {
-                            await new Promise((resolve, reject) => {
-                                const command = ffmpeg(file.path);
-                                if (settings) {
-                                    if (settings.resolution && settings.resolution !== 'original') command.size(settings.resolution);
-                                    if (settings.audioBitrate && settings.audioBitrate !== 'original') command.audioBitrate(settings.audioBitrate);
-                                }
-                                if (outputFormat === 'm4a') command.audioCodec('aac');
-                                
-                                command.toFormat(outputFormat)
-                                    .on('error', (err) => reject(new Error(`FFmpeg error: ${err.message}`)))
-                                    .on('end', () => resolve())
-                                    .save(outputPath);
-                            });
-                        }
-                        // 6. EBOOK (Calibre)
-                        else if (fileCategory === 'EBOOK') {
-                            const calibrePath = '/Applications/calibre.app/Contents/MacOS/ebook-convert';
-                            const inputWithExt = path.join(tempOutputDir, `temp_${Date.now()}.${fileExt}`);
-                            await fsp.copyFile(file.path, inputWithExt);
-                            const command = `"${calibrePath}" "${inputWithExt}" "${outputPath}"`;
-                            await execPromise(command);
-                        }
-                        // 7. 3D MODELS (Assimp)
-                        else if (fileCategory === 'MODEL_3D') {
-                            const command = `assimp export "${file.path}" "${outputPath}"`;
-                            await execPromise(command);
+                            // ---------------------------------------------------
+
+                            conversionErrors.push(err.message);
                         }
 
-                        successfulProcessingPaths.push(outputPath);
-
-                    } catch (err) {
-                        console.error(`Failed to process ${file.originalName}:`, err.message);
-                    }
-                    sendProgress(Math.round(((i + 1) / files.length) * 100));
-                }
+                        sendProgress(Math.round(((i + 1) / files.length) * 100));
                     }
 
-                    if (successfulProcessingPaths.length === 0) throw new Error("No files could be processed.");
+                    // If we have no results AND no extractions, then it failed.
+                    if (!results.length && extractedCount === 0) {
+                        // If we have specific errors, show the first one to the user
+                        if (conversionErrors.length > 0) {
+                            throw new Error(conversionErrors[0]); 
+                        }
+                        throw new Error('No files could be converted.');
+                    }
 
-                    let finalFileName;
-                    if (successfulProcessingPaths.length === 1 && !isCreateArchiveJob) {
-                        const oldPath = successfulProcessingPaths[0];
-                        finalFileName = path.basename(oldPath);
-                        const newPath = path.join(CONVERTED_DIR, finalFileName);
-                        await fsp.rename(oldPath, newPath);
+                    // If we only did extraction, stop here (don't try to zip a folder)
+                    if (results.length === 0 && extractedCount > 0) return;
+
+                    let finalName;
+                    if (results.length === 1) {
+                        finalName = path.basename(results[0]);
+                        await fsp.rename(results[0], path.join(CONVERTED_DIR, finalName));
                     } else {
-                        finalFileName = `OmniConvert_${sessionId}.zip`;
-                        const zipPath = path.join(CONVERTED_DIR, finalFileName);
+                        finalName = `OmniConvert_${sessionId}.zip`;
+                        const zipPath = path.join(CONVERTED_DIR, finalName);
+
                         await new Promise((resolve, reject) => {
                             const output = fs.createWriteStream(zipPath);
                             const archive = archiver('zip');
-                            output.on('close', resolve);
-                            archive.on('error', reject);
+
                             archive.pipe(output);
-                            for (const p of successfulProcessingPaths) {
-                                if (fs.statSync(p).isDirectory()) archive.directory(p, path.basename(p));
-                                else archive.file(p, { name: path.basename(p) });
-                            }
+                            archive.on('error', reject);
+                            output.on('close', resolve);
+
+                            results.forEach(p =>
+                                archive.file(p, { name: path.basename(p) })
+                            );
+
                             archive.finalize();
                         });
                     }
-                    const downloadUrl = `/download/${encodeURIComponent(finalFileName)}`;
-                    ws.send(JSON.stringify({ type: 'COMPLETE', payload: { downloadUrl } }));
-                } catch (error) {
-                    sendError(error.message);
+
+                    ws.send(JSON.stringify({
+                        type: 'COMPLETE',
+                        payload: { downloadUrl: `/download/${encodeURIComponent(finalName)}` }
+                    }));
+
+                } catch (err) {
+                    console.error('[JOB ERROR]', err);
+                    ws.send(JSON.stringify({
+                        type: 'ERROR',
+                        payload: { message: err.message }
+                    }));
                 } finally {
-                    if (!isArchiveJob) await fsp.rm(tempOutputDir, { recursive: true, force: true }).catch(e => {});
-                    await Promise.allSettled(files.map(f => fsp.unlink(f.path)));
+                    // Cleanup
+                    await fsp.rm(tempOutputDir, { recursive: true, force: true }).catch(() => {});
+                    // Note: We don't delete the secure_uploads source file here to allow re-runs.
+                    // The main process cleans that up on restart.
                 }
             }
+
         } catch (error) {
             console.error('[WEBSOCKET ERROR]', error);
             sendError('An unexpected server error occurred.');
@@ -424,6 +929,13 @@ wss.on('connection', (ws, req) => {
     });
     ws.on('close', () => console.log('[WSS] Client disconnected.'));
 });
+
+try {
+    fs.accessSync(BASE_DIR, fs.constants.W_OK);
+    console.log('[TEST] Write permission confirmed.');
+} catch (e) {
+    console.error('[TEST] ❌ No write permission to BASE_DIR:', e.message);
+}
 
 server.listen(port, async () => {
     try {

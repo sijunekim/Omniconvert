@@ -15,7 +15,10 @@ server/sessions
 # Secrets & Login Data (CRITICAL)
 server/tokens.json
 tokens.json
-server/.env    <-- THIS IS THE NEW LINE
+server/.env    <-- THIS IS THE NEW LINE\
+
+# Security
+src/config/secrets.js
 
 # System files
 .DS_Store
